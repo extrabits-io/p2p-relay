@@ -1,0 +1,10 @@
+[proxy]
+listen_url = "localhost"
+listen_port = 5002
+
+[server]
+ip_range = "10.8.0.0/24"
+
+[[peers]]
+label = "jamin-mac-studio"
+public_key = "BvET7nal6LWcllP7UXJjciQMX82xfbIlkVO+0pHsWx4="

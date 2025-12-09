@@ -1,0 +1,15 @@
+[package]
+name = "p2p-relay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+axum = "0.8.7"
+env_logger = "0.11.8"
+figment = { version = "0.10.19", features = ["toml", "env"] }
+hyper = { version = "1.8.1", features = ["full"] }
+hyper-util = { version = "0.1.19", features = ["client-legacy"] }
+log = "0.4.29"
+serde = { version = "1.0.228", features = ["serde_derive"] }
+tokio = { version = "1.48.0", features = ["full"] }
