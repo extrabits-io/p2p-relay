@@ -10,11 +10,11 @@ use axum::{
 use hyper::{StatusCode, Uri};
 use hyper_util::{client::legacy::connect::HttpConnector, rt::TokioExecutor};
 
-use crate::config::ProxyConfig;
+use crate::{config::ProxyConfig, server::Peer};
 
 type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
-pub async fn start(config: &ProxyConfig) -> anyhow::Result<(), io::Error> {
+pub async fn start(config: &ProxyConfig, peers: &Vec<Peer>) -> anyhow::Result<(), io::Error> {
     let client: Client =
         hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
             .build(HttpConnector::new());

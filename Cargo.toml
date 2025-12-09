@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 axum = "0.8.7"
+defguard_wireguard_rs = "0.7.8"
 env_logger = "0.11.8"
 figment = { version = "0.10.19", features = ["toml", "env"] }
 hyper = { version = "1.8.1", features = ["full"] }

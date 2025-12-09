@@ -2,7 +2,7 @@ use figment::{
     Figment,
     providers::{Env, Format, Toml},
 };
-use p2p_relay::{config::Configuration, proxy};
+use p2p_relay::{config::Configuration, proxy, server};
 
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
@@ -14,9 +14,9 @@ async fn main() {
         .extract()
         .unwrap();
 
-    // let mut builder = env_logger::Builder::new();
-    // builder.target(env_logger::Target::Stdout).init();
     env_logger::init();
 
-    proxy::start(&config.proxy).await.unwrap();
+    server::create_interface(&config.server).unwrap();
+    let peers = server::create_peers(&config.peers).unwrap();
+    proxy::start(&config.proxy, &peers).await.unwrap();
 }
