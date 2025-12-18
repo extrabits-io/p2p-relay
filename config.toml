@@ -3,7 +3,7 @@ listen_url = "localhost"
 listen_port = 5002
 
 [server]
-ip_range = "10.8.0.0/24"
+ip_range = "10.8.0.1/24"
 
 [[peers]]
 label = "jamin-mac-studio"

@@ -679,6 +679,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "defguard_wireguard_rs",
  "env_logger",
  "figment",
@@ -687,6 +688,7 @@ dependencies = [
  "log",
  "serde",
  "tokio",
+ "x25519-dalek",
 ]
 
 [[package]]
