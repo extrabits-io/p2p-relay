@@ -16,7 +16,7 @@ async fn main() {
 
     env_logger::init();
 
-    server::create_interface(&config.server).unwrap();
-    let peers = server::create_peers(&config.peers).unwrap();
+    let server = server::create_interface(&config.server).unwrap();
+    let peers = server::create_peers(&config.peers, &server).unwrap();
     proxy::start(&config.proxy, &peers).await.unwrap();
 }

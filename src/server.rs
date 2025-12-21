@@ -1,12 +1,20 @@
-use std::{net::{Ipv4Addr}, str::FromStr};
+use std::{net::{IpAddr, Ipv4Addr}, str::FromStr};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 #[cfg(not(target_os = "macos"))]
 use defguard_wireguard_rs::WGApi;
 use defguard_wireguard_rs::{InterfaceConfiguration, WireguardInterfaceApi, key::Key, net::IpAddrMask};
-use log::info;
-use x25519_dalek::StaticSecret;
+use x25519_dalek::{PublicKey, StaticSecret};
 use crate::config::{PeerConfig, ServerConfig};
+use crate::error::RelayError;
+
+pub struct Server {
+    pub public_key: PublicKey,
+    pub address: IpAddr,
+    pub cidr: u8,
+    pub port: u16,
+    pub wgapi: WGApi,
+}
 
 pub struct Peer {
     pub label: String,
@@ -20,9 +28,9 @@ pub struct PeerAddress {
 }
 
 impl PeerAddress {
-    pub fn new(ip_address: &Ipv4Addr, cidr: u8) -> Self {
+    pub fn new(ip_address: Ipv4Addr, cidr: u8) -> Self {
         Self {
-            ip_address: ip_address.clone(),
+            ip_address,
             mask_bits: u32::MAX >> cidr,
         }
     }
@@ -41,7 +49,7 @@ impl PeerAddress {
     }
 }
 
-pub fn create_interface(config: &ServerConfig) -> anyhow::Result<()> {
+pub fn create_interface(config: &ServerConfig) -> anyhow::Result<Server> {
     let ifname: String = if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") {
         "wg0".into()
     } else {
@@ -60,6 +68,9 @@ pub fn create_interface(config: &ServerConfig) -> anyhow::Result<()> {
     log::info!("Created private key:  {}", &prvkey);
 
     let addr_mask = IpAddrMask::from_str(&config.ip_range)?;
+    let address = addr_mask.ip.clone();
+    let cidr = addr_mask.cidr;
+
     let interface_config = InterfaceConfiguration {
         name: ifname.clone(),
         prvkey,
@@ -78,16 +89,35 @@ pub fn create_interface(config: &ServerConfig) -> anyhow::Result<()> {
     let host = wgapi.read_interface_data()?;
     log::info!("WireGuard interface: {host:#?}");
     
-    Ok(())
+    Ok(Server {
+        public_key: PublicKey::from(&secret),
+        address,
+        cidr,
+        port: config.listen_port,
+        wgapi,
+    })
 }
 
-pub fn create_peers(config: &Vec<PeerConfig>) -> anyhow::Result<Vec<Peer>> {
+pub fn create_peers(config: &Vec<PeerConfig>, server: &Server) -> anyhow::Result<Vec<Peer>> {
+    let mut peer_address = if let IpAddr::V4(addr) = server.address {
+        PeerAddress::new(addr, server.cidr)
+    } else {
+        return Err(RelayError::Ipv4required.into());
+    };
+
     let peers = Vec::new();
 
     for cfg in config {
-        let key = Key::from_str(&cfg.public_key)?;
-        let mut wg_peer = defguard_wireguard_rs::host::Peer::new(key);
-        
+        if let Some(next_address) = peer_address.next_address() {
+            peer_address = next_address;
+            let key = Key::from_str(&cfg.public_key)?;
+            let mut wg_peer = defguard_wireguard_rs::host::Peer::new(key);
+            let peer_addr_mask = IpAddrMask::from_str(&format!("{}/32", &peer_address.ip_address))?;
+            wg_peer.allowed_ips.push(peer_addr_mask);
+            server.wgapi.configure_peer(&wg_peer)?;
+        } else {
+            return Err(RelayError::OutOfAddresses.into());
+        }
     }
     Ok(peers)
 }
@@ -103,7 +133,7 @@ mod tests {
         let addr_mask = IpAddrMask::from_str("10.8.0.1/30").unwrap();
         if let IpAddr::V4(addr) = addr_mask.ip {
             let first_addr = PeerAddress::new(
-                &addr, addr_mask.cidr,
+                addr, addr_mask.cidr,
             );
             let next_addr = first_addr.next_address();
             assert!(next_addr.is_some());
