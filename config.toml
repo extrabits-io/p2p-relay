@@ -5,6 +5,12 @@ listen_port = 5002
 [server]
 ip_range = "10.8.0.1/24"
 
+# [[peers]]
+# label = "jamin-mac-studio"
+# public_key = "BvET7nal6LWcllP7UXJjciQMX82xfbIlkVO+0pHsWx4="
+# port = 5001
+
 [[peers]]
-label = "jamin-mac-studio"
-public_key = "BvET7nal6LWcllP7UXJjciQMX82xfbIlkVO+0pHsWx4="
+label = "jamin-laptop"
+public_key = "RZjFrOTTLjkNsf3QQ4t0pz8uVCy+nL9UJ4Mr+v5Paz0="
+port = 5001

@@ -16,15 +16,17 @@ pub struct Server {
     pub wgapi: WGApi,
 }
 
-pub struct Peer {
-    pub label: String,
-    pub address: String,
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PeerAddress {
     pub ip_address: Ipv4Addr,
     mask_bits: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct Peer {
+    pub label: String,
+    pub address: PeerAddress,
+    pub port: u16,
 }
 
 impl PeerAddress {
@@ -65,11 +67,12 @@ pub fn create_interface(config: &ServerConfig) -> anyhow::Result<Server> {
 
     let secret = StaticSecret::random();
     let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
-    log::info!("Created private key:  {}", &prvkey);
+    // log::info!("Created private key:  {}", &prvkey);
 
     let addr_mask = IpAddrMask::from_str(&config.ip_range)?;
     let address = addr_mask.ip.clone();
     let cidr = addr_mask.cidr;
+    let public_key = PublicKey::from(&secret);
 
     let interface_config = InterfaceConfiguration {
         name: ifname.clone(),
@@ -86,11 +89,10 @@ pub fn create_interface(config: &ServerConfig) -> anyhow::Result<Server> {
     #[cfg(windows)]
     wgapi.configure_interface(&interface_config, &[])?;
 
-    let host = wgapi.read_interface_data()?;
-    log::info!("WireGuard interface: {host:#?}");
+    log::info!("Created Wireguard interface: {} {}/{}", BASE64_STANDARD.encode(public_key.as_bytes()), &address, cidr);
     
     Ok(Server {
-        public_key: PublicKey::from(&secret),
+        public_key,
         address,
         cidr,
         port: config.listen_port,
@@ -105,7 +107,7 @@ pub fn create_peers(config: &Vec<PeerConfig>, server: &Server) -> anyhow::Result
         return Err(RelayError::Ipv4required.into());
     };
 
-    let peers = Vec::new();
+    let mut peers = Vec::new();
 
     for cfg in config {
         if let Some(next_address) = peer_address.next_address() {
@@ -115,13 +117,22 @@ pub fn create_peers(config: &Vec<PeerConfig>, server: &Server) -> anyhow::Result
             let peer_addr_mask = IpAddrMask::from_str(&format!("{}/32", &peer_address.ip_address))?;
             wg_peer.allowed_ips.push(peer_addr_mask);
             server.wgapi.configure_peer(&wg_peer)?;
+            
+            peers.push(Peer {
+                label: cfg.label.clone(),
+                address: peer_address.clone(),
+                port: cfg.port,
+            });
+            log::info!("Created peer:  {} {}", &cfg.label, &peer_address.ip_address);
         } else {
             return Err(RelayError::OutOfAddresses.into());
         }
     }
+
     Ok(peers)
 }
 
+#[cfg(test)]
 mod tests {
     use std::{net::IpAddr, str::FromStr};
     use defguard_wireguard_rs::net::IpAddrMask;

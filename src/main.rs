@@ -1,3 +1,4 @@
+use defguard_wireguard_rs::WireguardInterfaceApi;
 use figment::{
     Figment,
     providers::{Env, Format, Toml},
@@ -16,7 +17,19 @@ async fn main() {
 
     env_logger::init();
 
+    let shutdown = tokio::signal::ctrl_c();
     let server = server::create_interface(&config.server).unwrap();
     let peers = server::create_peers(&config.peers, &server).unwrap();
-    proxy::start(&config.proxy, &peers).await.unwrap();
+
+    tokio::select! {
+        _ = proxy::start(&config.proxy, &peers) => {
+            log::error!("Proxy failure"); // shouldn't happen
+        }
+        _ = shutdown => {
+            println!("Shutting down...");
+            if let Err(e) = server.wgapi.remove_interface() {
+                log::error!("Error removing Wireguard interface: {}", e);
+            }
+        }
+    }
 }
