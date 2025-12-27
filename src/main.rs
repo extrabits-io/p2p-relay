@@ -21,7 +21,7 @@ async fn main() {
     let shutdown = tokio::signal::ctrl_c();
     let server = Server::create(&config.server).unwrap();
     let peers = Arc::new(
-      server.create_peers(&config.peers).unwrap()
+        server.create_peers(&config.peers).unwrap()
     );
 
     tokio::select! {
@@ -29,7 +29,7 @@ async fn main() {
             log::error!("Proxy failure"); // shouldn't happen
         }
         _ = shutdown => {
-            println!("Shutting down...");
+            log::info!("Shutting down...");
             if let Err(e) = server.dispose() {
                 log::error!("Error removing Wireguard interface: {}", e);
             }
