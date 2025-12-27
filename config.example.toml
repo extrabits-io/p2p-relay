@@ -1,0 +1,17 @@
+[proxy]
+listen_url = "localhost"
+listen_port = 5000
+
+[server]
+private_key_path = "/path/to/private.key"
+ip_range = "10.8.0.1/24"
+
+[[peers]]
+label = "peer-1"
+public_key = "<base-64 encoded Wireguard public key>"
+port = 3000
+
+[[peers]]
+label = "peer-2"
+public_key = "<base-64 encoded Wireguard public key>"
+port = 3000

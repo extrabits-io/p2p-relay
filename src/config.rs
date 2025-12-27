@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -7,8 +9,9 @@ pub struct ProxyConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
+    #[serde(default = "default_private_key_path")]
+    pub private_key_path: PathBuf,
     pub ip_range: String,
     #[serde(default = "default_listen_port")]
     pub listen_port: u16,
@@ -18,6 +21,7 @@ pub struct ServerConfig {
 pub struct PeerConfig {
     pub label: String,
     pub public_key: String,
+    pub port: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -29,4 +33,8 @@ pub struct Configuration {
 
 fn default_listen_port() -> u16 {
     51820
+}
+
+fn default_private_key_path() -> PathBuf {
+    std::env::current_dir().unwrap().with_file_name("private.key")
 }
