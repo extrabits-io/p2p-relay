@@ -8,14 +8,6 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use crate::config::{PeerConfig, ServerConfig};
 use crate::error::RelayError;
 
-pub struct Server {
-    pub public_key: PublicKey,
-    pub address: IpAddr,
-    pub cidr: u8,
-    pub port: u16,
-    pub wgapi: WGApi,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct PeerAddress {
     pub ip_address: Ipv4Addr,
@@ -51,85 +43,99 @@ impl PeerAddress {
     }
 }
 
-pub fn create_interface(config: &ServerConfig) -> anyhow::Result<Server> {
-    let ifname: String = if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") {
-        "wg0".into()
-    } else {
-        "utun3".into()
-    };
-
-    #[cfg(not(target_os = "macos"))]
-    let wgapi = WGApi::<defguard_wireguard_rs::Kernel>::new(ifname.clone())?;
-    #[cfg(target_os = "macos")]
-    let wgapi = WGApi::<defguard_wireguard_rs::Userspace>::new(ifname.clone())?;
-
-    wgapi.create_interface()?;
-
-    let secret = StaticSecret::random();
-    let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
-    // log::info!("Created private key:  {}", &prvkey);
-
-    let addr_mask = IpAddrMask::from_str(&config.ip_range)?;
-    let address = addr_mask.ip.clone();
-    let cidr = addr_mask.cidr;
-    let public_key = PublicKey::from(&secret);
-
-    let interface_config = InterfaceConfiguration {
-        name: ifname.clone(),
-        prvkey,
-        addresses: vec![addr_mask],
-        port: config.listen_port as u32,
-        peers: vec![],
-        mtu: None,
-    };
-
-    // apply initial interface configuration
-    #[cfg(not(windows))]
-    wgapi.configure_interface(&interface_config)?;
-    #[cfg(windows)]
-    wgapi.configure_interface(&interface_config, &[])?;
-
-    log::info!("Created Wireguard interface: {} {}/{}", BASE64_STANDARD.encode(public_key.as_bytes()), &address, cidr);
-    
-    Ok(Server {
-        public_key,
-        address,
-        cidr,
-        port: config.listen_port,
-        wgapi,
-    })
+pub struct Server {
+    pub public_key: PublicKey,
+    pub address: IpAddr,
+    pub cidr: u8,
+    pub port: u16,
+    wgapi: WGApi,
 }
 
-pub fn create_peers(config: &Vec<PeerConfig>, server: &Server) -> anyhow::Result<Vec<Peer>> {
-    let mut peer_address = if let IpAddr::V4(addr) = server.address {
-        PeerAddress::new(addr, server.cidr)
-    } else {
-        return Err(RelayError::Ipv4required.into());
-    };
-
-    let mut peers = Vec::new();
-
-    for cfg in config {
-        if let Some(next_address) = peer_address.next_address() {
-            peer_address = next_address;
-            let key = Key::from_str(&cfg.public_key)?;
-            let mut wg_peer = defguard_wireguard_rs::host::Peer::new(key);
-            let peer_addr_mask = IpAddrMask::from_str(&format!("{}/32", &peer_address.ip_address))?;
-            wg_peer.allowed_ips.push(peer_addr_mask);
-            server.wgapi.configure_peer(&wg_peer)?;
-            
-            peers.push(Peer {
-                label: cfg.label.clone(),
-                address: peer_address.clone(),
-                port: cfg.port,
-            });
-            log::info!("Created peer:  {} {}", &cfg.label, &peer_address.ip_address);
+impl Server {
+    pub fn create(config: &ServerConfig) -> anyhow::Result<Self> {
+        let ifname: String = if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") {
+            "wg0".into()
         } else {
-            return Err(RelayError::OutOfAddresses.into());
-        }
+            "utun3".into()
+        };
+
+        #[cfg(not(target_os = "macos"))]
+        let wgapi = WGApi::<defguard_wireguard_rs::Kernel>::new(ifname.clone())?;
+        #[cfg(target_os = "macos")]
+        let wgapi = WGApi::<defguard_wireguard_rs::Userspace>::new(ifname.clone())?;
+
+        wgapi.create_interface()?;
+
+        let secret = StaticSecret::random();
+        let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
+
+        let addr_mask = IpAddrMask::from_str(&config.ip_range)?;
+        let address = addr_mask.ip.clone();
+        let cidr = addr_mask.cidr;
+        let public_key = PublicKey::from(&secret);
+
+        let interface_config = InterfaceConfiguration {
+            name: ifname.clone(),
+            prvkey,
+            addresses: vec![addr_mask],
+            port: config.listen_port as u32,
+            peers: vec![],
+            mtu: None,
+        };
+
+        // apply initial interface configuration
+        #[cfg(not(windows))]
+        wgapi.configure_interface(&interface_config)?;
+        #[cfg(windows)]
+        wgapi.configure_interface(&interface_config, &[])?;
+
+        log::info!("Created Wireguard interface: {} {}/{}", BASE64_STANDARD.encode(public_key.as_bytes()), &address, cidr);
+
+        Ok(Self {
+            public_key,
+            address,
+            cidr,
+            port: config.listen_port,
+            wgapi,
+        })
     }
 
-    Ok(peers)
+    pub fn create_peers(&self, config: &Vec<PeerConfig>) -> anyhow::Result<Vec<Peer>> {
+        let mut peer_address = if let IpAddr::V4(addr) = self.address {
+            PeerAddress::new(addr, self.cidr)
+        } else {
+            return Err(RelayError::Ipv4required.into());
+        };
+
+        let mut peers = Vec::new();
+
+        for cfg in config {
+            if let Some(next_address) = peer_address.next_address() {
+                peer_address = next_address;
+                let key = Key::from_str(&cfg.public_key)?;
+                let mut wg_peer = defguard_wireguard_rs::host::Peer::new(key);
+                let peer_addr_mask = IpAddrMask::from_str(&format!("{}/32", &peer_address.ip_address))?;
+                wg_peer.allowed_ips.push(peer_addr_mask);
+                self.wgapi.configure_peer(&wg_peer)?;
+
+                peers.push(Peer {
+                    label: cfg.label.clone(),
+                    address: peer_address.clone(),
+                    port: cfg.port,
+                });
+                log::info!("Created peer:  {} {}", &cfg.label, &peer_address.ip_address);
+            } else {
+                return Err(RelayError::OutOfAddresses.into());
+            }
+        }
+
+        Ok(peers)
+    }
+
+    pub fn dispose(&self) -> anyhow::Result<()> {
+        self.wgapi.remove_interface()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -1,9 +1,10 @@
-use defguard_wireguard_rs::WireguardInterfaceApi;
+use std::sync::Arc;
+
 use figment::{
     Figment,
     providers::{Env, Format, Toml},
 };
-use p2p_relay::{config::Configuration, proxy, server};
+use p2p_relay::{config::Configuration, proxy, server::Server};
 
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
@@ -18,16 +19,18 @@ async fn main() {
     env_logger::init();
 
     let shutdown = tokio::signal::ctrl_c();
-    let server = server::create_interface(&config.server).unwrap();
-    let peers = server::create_peers(&config.peers, &server).unwrap();
+    let server = Server::create(&config.server).unwrap();
+    let peers = Arc::new(
+      server.create_peers(&config.peers).unwrap()
+    );
 
     tokio::select! {
-        _ = proxy::start(&config.proxy, &peers) => {
+        _ = proxy::start(&config.proxy, peers) => {
             log::error!("Proxy failure"); // shouldn't happen
         }
         _ = shutdown => {
             println!("Shutting down...");
-            if let Err(e) = server.wgapi.remove_interface() {
+            if let Err(e) = server.dispose() {
                 log::error!("Error removing Wireguard interface: {}", e);
             }
         }

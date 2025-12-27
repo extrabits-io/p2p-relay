@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, sync::Arc};
 
 use axum::{
     Router, body::Body, extract::{Request, State}, response::{IntoResponse, Response}, routing::get
@@ -13,10 +13,10 @@ type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 #[derive(Clone)]
 struct ProxyState {
     pub client: Client,
-    pub peers: Vec<Peer>,
+    pub peers: Arc<Vec<Peer>>,
 }
 
-pub async fn start(config: &ProxyConfig, peers: &Vec<Peer>) -> anyhow::Result<(), io::Error> {
+pub async fn start(config: &ProxyConfig, peers: Arc<Vec<Peer>>) -> anyhow::Result<(), io::Error> {
     let client: Client =
         hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
             .build(HttpConnector::new());
