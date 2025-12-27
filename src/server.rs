@@ -1,4 +1,4 @@
-use std::{net::{IpAddr, Ipv4Addr}, str::FromStr};
+use std::{fs::File, io::{Read, Write}, net::{IpAddr, Ipv4Addr}, path::PathBuf, str::FromStr};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
 #[cfg(not(target_os = "macos"))]
@@ -66,13 +66,10 @@ impl Server {
 
         wgapi.create_interface()?;
 
-        let secret = StaticSecret::random();
-        let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
-
+        let (prvkey, public_key) = Self::get_secret(&config.private_key_path)?;
         let addr_mask = IpAddrMask::from_str(&config.ip_range)?;
         let address = addr_mask.ip.clone();
         let cidr = addr_mask.cidr;
-        let public_key = PublicKey::from(&secret);
 
         let interface_config = InterfaceConfiguration {
             name: ifname.clone(),
@@ -135,6 +132,26 @@ impl Server {
     pub fn dispose(&self) -> anyhow::Result<()> {
         self.wgapi.remove_interface()?;
         Ok(())
+    }
+
+    fn get_secret(private_key_path: &PathBuf) -> anyhow::Result<(String, PublicKey)> {
+        if private_key_path.is_file() {
+            let mut file = File::open(private_key_path)?;
+            let mut buff = String::new();
+            file.read_to_string(&mut buff)?;
+            let mut data: [u8; 32] = [0; 32];
+            BASE64_STANDARD.decode_slice(&buff, &mut data)?;
+            let secret = StaticSecret::from(data);
+            let pubkey = PublicKey::from(&secret);
+            Ok((buff, pubkey))
+        } else {
+            let secret = StaticSecret::random();
+            let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
+            let mut file = File::create(private_key_path)?;
+            file.write_all(prvkey.as_bytes())?;
+            let pubkey = PublicKey::from(&secret);
+            Ok((prvkey, pubkey))
+        }
     }
 }
 
