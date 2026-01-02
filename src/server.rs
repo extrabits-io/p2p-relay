@@ -1,7 +1,6 @@
 use std::{fs::File, io::{Read, Write}, net::{IpAddr, Ipv4Addr}, path::PathBuf, str::FromStr};
 
 use base64::{Engine, prelude::BASE64_STANDARD};
-#[cfg(not(target_os = "macos"))]
 use defguard_wireguard_rs::WGApi;
 use defguard_wireguard_rs::{InterfaceConfiguration, WireguardInterfaceApi, key::Key, net::IpAddrMask};
 use x25519_dalek::{PublicKey, StaticSecret};
@@ -48,7 +47,10 @@ pub struct Server {
     pub address: IpAddr,
     pub cidr: u8,
     pub port: u16,
-    wgapi: WGApi,
+    #[cfg(not(target_os = "macos"))]
+    wgapi: WGApi<defguard_wireguard_rs::Kernel>,
+    #[cfg(target_os = "macos")]
+    wgapi: WGApi<defguard_wireguard_rs::Userspace>,
 }
 
 impl Server {
