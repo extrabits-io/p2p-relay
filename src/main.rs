@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use figment::{
     Figment,
     providers::{Env, Format, Toml},
 };
-use p2p_relay::{config::Configuration, proxy, server::Server};
+use p2p_relay::{config::Configuration, server::Server};
 
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
@@ -20,19 +18,13 @@ async fn main() {
 
     let shutdown = tokio::signal::ctrl_c();
     let server = Server::create(&config.server).unwrap();
-    let peers = Arc::new(
-        server.create_peers(&config.peers).unwrap()
-    );
 
     tokio::select! {
-        _ = proxy::start(&config.proxy, peers) => {
-            log::error!("Proxy failure"); // shouldn't happen
+        _ = server.start() => {
+            log::error!("Server failure"); // shouldn't happen
         }
         _ = shutdown => {
             log::info!("Shutting down...");
-            if let Err(e) = server.dispose() {
-                log::error!("Error removing Wireguard interface: {}", e);
-            }
         }
     }
 }
