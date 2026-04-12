@@ -15,7 +15,6 @@ pub struct ServerConfig {
 pub struct PeerConfig {
     pub label: String,
     pub public_key: String,
-    pub port: u16,
 }
 
 #[derive(Debug, Deserialize)]
