@@ -2,6 +2,7 @@ use figment::{
     Figment,
     providers::{Env, Format, Toml},
 };
+use tracing::{error, info};
 use p2p_relay::{config::Configuration, server::Server};
 
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
@@ -14,17 +15,17 @@ async fn main() {
         .extract()
         .unwrap();
 
-    env_logger::init();
+    tracing_subscriber::fmt::init();
 
     let shutdown = tokio::signal::ctrl_c();
     let server = Server::create(&config.server).unwrap();
 
     tokio::select! {
         _ = server.start() => {
-            log::error!("Server failure"); // shouldn't happen
+            error!("Server failure"); // shouldn't happen
         }
         _ = shutdown => {
-            log::info!("Shutting down...");
+            info!("Shutting down...");
         }
     }
 }

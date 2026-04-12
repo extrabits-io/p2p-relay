@@ -7,6 +7,7 @@ use std::{
 
 use crate::config::ServerConfig;
 use base64::{Engine, prelude::BASE64_STANDARD};
+use tracing::info;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 #[derive(Clone, Debug)]
@@ -29,7 +30,7 @@ impl Server {
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::LOCALHOST));
         tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
-        log::info!("Created server:  {}", &pub_key_str);
+        info!("Created server:  {}", &pub_key_str);
         Ok(Self { public_key, tunnel })
     }
 
