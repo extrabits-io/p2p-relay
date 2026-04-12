@@ -1,7 +1,3 @@
-[proxy]
-listen_url = "localhost"
-listen_port = 5000
-
 [server]
 private_key_path = "/path/to/private.key"
 ip_range = "10.8.0.1/24"
