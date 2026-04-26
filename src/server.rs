@@ -27,7 +27,7 @@ impl Server {
         let pub_key_str = BASE64_STANDARD.encode(public_key.as_bytes());
         let mut tunnel =
             bore_cli::server::Server::new(config.port_range.clone(), Some(&pub_key_str));
-        tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
         info!("Created server:  {}", &pub_key_str);
