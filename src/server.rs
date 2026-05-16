@@ -1,14 +1,16 @@
 use std::{
-    fs::File,
-    io::{Read, Write},
     net::{IpAddr, Ipv4Addr},
     path::PathBuf,
 };
 
 use crate::config::ServerConfig;
 use base64::{Engine, prelude::BASE64_STANDARD};
+use ed25519_dalek::{
+    SigningKey,
+    pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, spki::der::pem::LineEnding},
+};
+use rand::rngs::OsRng;
 use tracing::info;
-use x25519_dalek::{PublicKey, StaticSecret};
 
 #[derive(Clone, Debug)]
 pub struct Peer {
@@ -17,44 +19,36 @@ pub struct Peer {
 }
 
 pub struct Server {
-    pub public_key: PublicKey,
     tunnel: bore_cli::server::Server,
 }
 
 impl Server {
     pub fn create(config: &ServerConfig) -> anyhow::Result<Self> {
-        let (_, public_key) = Self::get_secret(&config.private_key_path)?;
-        let pub_key_str = BASE64_STANDARD.encode(public_key.as_bytes());
+        let signing_key = Self::get_signing_key(&config.private_key_path)?;
+        let pub_key_der = signing_key.verifying_key().to_public_key_der()?;
+        let pub_key_str = BASE64_STANDARD.encode(pub_key_der.as_bytes());
         let mut tunnel =
-            bore_cli::server::Server::new(config.port_range.clone(), Some(&pub_key_str));
+            bore_cli::server::Server::new(config.port_range.clone(), Some(signing_key));
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
         info!("Created server:  {}", &pub_key_str);
-        Ok(Self { public_key, tunnel })
+        Ok(Self { tunnel })
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
         self.tunnel.listen().await
     }
 
-    fn get_secret(private_key_path: &PathBuf) -> anyhow::Result<(String, PublicKey)> {
+    fn get_signing_key(private_key_path: &PathBuf) -> anyhow::Result<SigningKey> {
         if private_key_path.is_file() {
-            let mut file = File::open(private_key_path)?;
-            let mut buff = String::new();
-            file.read_to_string(&mut buff)?;
-            let mut data: [u8; 32] = [0; 32];
-            BASE64_STANDARD.decode_slice(&buff, &mut data)?;
-            let secret = StaticSecret::from(data);
-            let pubkey = PublicKey::from(&secret);
-            Ok((buff, pubkey))
+            let key = SigningKey::read_pkcs8_pem_file(private_key_path)?;
+            Ok(key)
         } else {
-            let secret = StaticSecret::random();
-            let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
-            let mut file = File::create(private_key_path)?;
-            file.write_all(prvkey.as_bytes())?;
-            let pubkey = PublicKey::from(&secret);
-            Ok((prvkey, pubkey))
+            let mut csprng = OsRng;
+            let key = SigningKey::generate(&mut csprng);
+            key.write_pkcs8_pem_file(private_key_path, LineEnding::LF)?;
+            Ok(key)
         }
     }
 }

@@ -1,13 +1,11 @@
 [server]
 private_key_path = "/path/to/private.key"
-ip_range = "10.8.0.1/24"
+port_range = "3000..4000"
 
 [[peers]]
 label = "peer-1"
-public_key = "<base-64 encoded Wireguard public key>"
-port = 3000
+public_key = "<base-64 encoded Ed25519 public key>"
 
 [[peers]]
 label = "peer-2"
-public_key = "<base-64 encoded Wireguard public key>"
-port = 3000
+public_key = "<base-64 encoded Ed25519 public key>"
