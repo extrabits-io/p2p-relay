@@ -14,43 +14,32 @@ Open locally-hosted apps to the Internet.
 
 * Publicly-accessible server machine, such as a VPS from [Hostinger](https://www.hostinger.com/) or [Digital Ocean](https://www.digitalocean.com/).
 
-* **[Wireguard](https://www.wireguard.com/)** - must be installed on the public and local machines. Any pre-existing Wireguard configuration on the public machine will be ignored.
-
 ### Public server configuration
 
 Create a new file called `config.toml` or make a copy of `config.example.toml`.
 
 ```toml
-[proxy]
-listen_url = "localhost"
-listen_port = 5000
-
 [server]
-ip_range = "10.1.0.1/31"
+private_key_path = "/path/to/private.key"
+port_range = "3000..4000"
 
 [[peers]]
 label = "my-local-machine"
-public_key = "<base-64 encoded Wireguard public key>"
-port = 3000
-```
+public_key = "<base-64 encoded ed25519 public key>"
+```  
+ __multiple peer support is coming soon__
 
 Start the server:
 ```bash
 $ RUST_LOG=info ./p2p-relay
 ```
 
-Use a reverse proxy such as [Caddy](https://caddyserver.com/docs/quick-starts/reverse-proxy) to handle SSL certificates:
+Use a reverse proxy such as [Caddy](https://caddyserver.com/docs/quick-starts/reverse-proxy) to handle SSL certificates. Make sure it points to your local machine port, not the relay (e.g. 3001, not 3000):
 
 ```bash
-caddy reverse-proxy --from my.domain.com --to localhost:5000
+caddy reverse-proxy --from my.domain.com --to localhost:3001
 ```
 
 ### Local machine configuration
 
-Follow the Wireguard quickstart [instructions](https://www.wireguard.com/quickstart/).
-
-Server your local app on the Wireguard network:
-
-```bash
-$ HOST=10.1.0.2 PORT=3000 bun run dev
-```
+Use [p2p-app-host](https://github.com/extrabits-io/p2p-app-host) to host a local app and connect to the relay.

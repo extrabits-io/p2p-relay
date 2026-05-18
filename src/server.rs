@@ -1,185 +1,54 @@
-use std::{fs::File, io::{Read, Write}, net::{IpAddr, Ipv4Addr}, path::PathBuf, str::FromStr};
+use std::{
+    net::{IpAddr, Ipv4Addr},
+    path::PathBuf,
+};
 
+use crate::config::ServerConfig;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use defguard_wireguard_rs::WGApi;
-use defguard_wireguard_rs::{InterfaceConfiguration, WireguardInterfaceApi, key::Key, net::IpAddrMask};
-use x25519_dalek::{PublicKey, StaticSecret};
-use crate::config::{PeerConfig, ServerConfig};
-use crate::error::RelayError;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct PeerAddress {
-    pub ip_address: Ipv4Addr,
-    mask_bits: u32,
-}
+use ed25519_dalek::{
+    SigningKey,
+    pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, spki::der::pem::LineEnding},
+};
+use rand::rngs::OsRng;
+use tracing::info;
 
 #[derive(Clone, Debug)]
 pub struct Peer {
     pub label: String,
-    pub address: PeerAddress,
     pub port: u16,
-}
-
-impl PeerAddress {
-    pub fn new(ip_address: Ipv4Addr, cidr: u8) -> Self {
-        Self {
-            ip_address,
-            mask_bits: u32::MAX >> cidr,
-        }
-    }
-
-    pub fn next_address(&self) -> Option<Self> {
-        let next_bits = self.ip_address.to_bits() + 1;
-        if (next_bits & self.mask_bits) > 0 {
-            let ip_address = Ipv4Addr::from_bits(next_bits);
-            Some(Self {
-                ip_address,
-                mask_bits: self.mask_bits,
-            })
-        } else {
-            None
-        }
-    }
 }
 
 pub struct Server {
-    pub public_key: PublicKey,
-    pub address: IpAddr,
-    pub cidr: u8,
-    pub port: u16,
-    #[cfg(not(target_os = "macos"))]
-    wgapi: WGApi<defguard_wireguard_rs::Kernel>,
-    #[cfg(target_os = "macos")]
-    wgapi: WGApi<defguard_wireguard_rs::Userspace>,
+    tunnel: bore_cli::server::Server,
 }
 
 impl Server {
     pub fn create(config: &ServerConfig) -> anyhow::Result<Self> {
-        let ifname: String = if cfg!(target_os = "linux") || cfg!(target_os = "freebsd") {
-            "wg0".into()
-        } else {
-            "utun3".into()
-        };
+        let signing_key = Self::get_signing_key(&config.private_key_path)?;
+        let pub_key_der = signing_key.verifying_key().to_public_key_der()?;
+        let pub_key_str = BASE64_STANDARD.encode(pub_key_der.as_bytes());
+        let mut tunnel =
+            bore_cli::server::Server::new(config.port_range.clone(), Some(signing_key));
+        tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
-        #[cfg(not(target_os = "macos"))]
-        let wgapi = WGApi::<defguard_wireguard_rs::Kernel>::new(ifname.clone())?;
-        #[cfg(target_os = "macos")]
-        let wgapi = WGApi::<defguard_wireguard_rs::Userspace>::new(ifname.clone())?;
-
-        wgapi.create_interface()?;
-
-        let (prvkey, public_key) = Self::get_secret(&config.private_key_path)?;
-        let addr_mask = IpAddrMask::from_str(&config.ip_range)?;
-        let address = addr_mask.ip.clone();
-        let cidr = addr_mask.cidr;
-
-        let interface_config = InterfaceConfiguration {
-            name: ifname.clone(),
-            prvkey,
-            addresses: vec![addr_mask],
-            port: config.listen_port as u32,
-            peers: vec![],
-            mtu: None,
-        };
-
-        // apply initial interface configuration
-        #[cfg(not(windows))]
-        wgapi.configure_interface(&interface_config)?;
-        #[cfg(windows)]
-        wgapi.configure_interface(&interface_config, &[])?;
-
-        log::info!("Created Wireguard interface: {} {}/{}", BASE64_STANDARD.encode(public_key.as_bytes()), &address, cidr);
-
-        Ok(Self {
-            public_key,
-            address,
-            cidr,
-            port: config.listen_port,
-            wgapi,
-        })
+        info!("Created server:  {}", &pub_key_str);
+        Ok(Self { tunnel })
     }
 
-    pub fn create_peers(&self, config: &Vec<PeerConfig>) -> anyhow::Result<Vec<Peer>> {
-        let mut peer_address = if let IpAddr::V4(addr) = self.address {
-            PeerAddress::new(addr, self.cidr)
-        } else {
-            return Err(RelayError::Ipv4required.into());
-        };
-
-        let mut peers = Vec::new();
-
-        for cfg in config {
-            if let Some(next_address) = peer_address.next_address() {
-                peer_address = next_address;
-                let key = Key::from_str(&cfg.public_key)?;
-                let mut wg_peer = defguard_wireguard_rs::host::Peer::new(key);
-                let peer_addr_mask = IpAddrMask::from_str(&format!("{}/32", &peer_address.ip_address))?;
-                wg_peer.allowed_ips.push(peer_addr_mask);
-                self.wgapi.configure_peer(&wg_peer)?;
-
-                peers.push(Peer {
-                    label: cfg.label.clone(),
-                    address: peer_address.clone(),
-                    port: cfg.port,
-                });
-                log::info!("Created peer:  {} {}", &cfg.label, &peer_address.ip_address);
-            } else {
-                return Err(RelayError::OutOfAddresses.into());
-            }
-        }
-
-        Ok(peers)
+    pub async fn start(self) -> anyhow::Result<()> {
+        self.tunnel.listen().await
     }
 
-    pub fn dispose(&self) -> anyhow::Result<()> {
-        self.wgapi.remove_interface()?;
-        Ok(())
-    }
-
-    fn get_secret(private_key_path: &PathBuf) -> anyhow::Result<(String, PublicKey)> {
+    fn get_signing_key(private_key_path: &PathBuf) -> anyhow::Result<SigningKey> {
         if private_key_path.is_file() {
-            let mut file = File::open(private_key_path)?;
-            let mut buff = String::new();
-            file.read_to_string(&mut buff)?;
-            let mut data: [u8; 32] = [0; 32];
-            BASE64_STANDARD.decode_slice(&buff, &mut data)?;
-            let secret = StaticSecret::from(data);
-            let pubkey = PublicKey::from(&secret);
-            Ok((buff, pubkey))
+            let key = SigningKey::read_pkcs8_pem_file(private_key_path)?;
+            Ok(key)
         } else {
-            let secret = StaticSecret::random();
-            let prvkey = BASE64_STANDARD.encode(secret.to_bytes());
-            let mut file = File::create(private_key_path)?;
-            file.write_all(prvkey.as_bytes())?;
-            let pubkey = PublicKey::from(&secret);
-            Ok((prvkey, pubkey))
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{net::IpAddr, str::FromStr};
-    use defguard_wireguard_rs::net::IpAddrMask;
-
-    use crate::server::PeerAddress;
-
-    #[test]
-    fn test_next_address() {
-        let addr_mask = IpAddrMask::from_str("10.8.0.1/30").unwrap();
-        if let IpAddr::V4(addr) = addr_mask.ip {
-            let first_addr = PeerAddress::new(
-                addr, addr_mask.cidr,
-            );
-            let next_addr = first_addr.next_address();
-            assert!(next_addr.is_some());
-            let next_addr = next_addr.unwrap();
-            assert_eq!("10.8.0.2", &format!("{}", &next_addr.ip_address));
-            let last_addr = next_addr.next_address();
-            assert!(last_addr.is_some());
-            let last_addr = last_addr.unwrap();
-            assert_eq!("10.8.0.3", &format!("{}", &last_addr.ip_address));
-            assert_eq!(last_addr.next_address(), None);
+            let mut csprng = OsRng;
+            let key = SigningKey::generate(&mut csprng);
+            key.write_pkcs8_pem_file(private_key_path, LineEnding::LF)?;
+            Ok(key)
         }
     }
 }
