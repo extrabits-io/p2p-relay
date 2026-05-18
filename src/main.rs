@@ -2,8 +2,8 @@ use figment::{
     Figment,
     providers::{Env, Format, Toml},
 };
-use tracing::{error, info};
 use p2p_relay::{config::Configuration, server::Server};
+use tracing::{error, info};
 
 const DEFAULT_CONFIG_FILE: &str = "config.toml";
 
@@ -21,8 +21,17 @@ async fn main() {
     let server = Server::create(&config.server).unwrap();
 
     tokio::select! {
-        _ = server.start() => {
-            error!("Server failure"); // shouldn't happen
+        result = server.start() => {
+            match result {
+                Ok(()) => {
+                    error!("Server stopped unexpectedly");
+                    std::process::exit(1);
+                }
+                Err(err) => {
+                    error!("Server failure: {err}");
+                    std::process::exit(1);
+                }
+            }
         }
         _ = shutdown => {
             info!("Shutting down...");

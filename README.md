@@ -42,4 +42,4 @@ caddy reverse-proxy --from my.domain.com --to localhost:3001
 
 ### Local machine configuration
 
-Use [p2p-app-host](https://github.com/extrabits-io/p2p-app-host) to quickly get host a local app and connect to the relay.
+Use [p2p-app-host](https://github.com/extrabits-io/p2p-app-host) to host a local app and connect to the relay.

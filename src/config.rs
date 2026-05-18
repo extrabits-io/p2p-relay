@@ -39,7 +39,7 @@ where
 
     if parts.len() != 2 {
         Err(serde::de::Error::custom(format!(
-            "Invalid range format: {}. Expected 'start..end' or an integer.",
+            "Invalid range format: {}. Expected 'start..end'.",
             s
         )))
     } else {
