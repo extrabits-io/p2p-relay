@@ -19,6 +19,8 @@ use tracing::info;
 pub struct Peer {
     pub label: String,
     pub port: u16,
+    pub last_heartbeat: Option<u64>,
+    pub last_latency: Option<u32>,
 }
 
 pub struct Server {
@@ -58,6 +60,7 @@ impl Server {
 
     pub async fn start(self) -> anyhow::Result<()> {
         self.tunnel.listen().await
+        // need hook to know when peer has connected and when heartbeat is received
     }
 
     fn get_signing_key(private_key_path: &PathBuf) -> anyhow::Result<SigningKey> {

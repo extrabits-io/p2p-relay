@@ -4,6 +4,12 @@ use serde::{Deserialize, Deserializer};
 use std::str::FromStr;
 
 #[derive(Debug, Deserialize)]
+pub struct RouterConfig {
+    pub listen_url: String,
+    pub listen_port: u16,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ServerConfig {
     #[serde(default = "default_private_key_path")]
     pub private_key_path: PathBuf,
@@ -20,6 +26,7 @@ pub struct PeerConfig {
 #[derive(Debug, Deserialize)]
 pub struct Configuration {
     pub server: ServerConfig,
+    pub router: RouterConfig,
     pub peers: Vec<PeerConfig>,
 }
 
