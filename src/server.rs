@@ -3,7 +3,10 @@ use std::{
     path::PathBuf,
 };
 
-use crate::config::{PeerConfig, ServerConfig};
+use crate::{
+    config::{PeerConfig, ServerConfig},
+    router::Router,
+};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use ed25519_dalek::{
     SigningKey, VerifyingKey,
@@ -15,16 +18,9 @@ use ed25519_dalek::{
 use rand::rngs::OsRng;
 use tracing::info;
 
-#[derive(Clone, Debug)]
-pub struct Peer {
-    pub label: String,
-    pub port: u16,
-    pub last_heartbeat: Option<u64>,
-    pub last_latency: Option<u32>,
-}
-
 pub struct Server {
     tunnel: p2p_lib::server::Server,
+    router: Router,
 }
 
 impl Server {
@@ -49,17 +45,22 @@ impl Server {
             })
             .collect();
         let mut tunnel =
-            p2p_lib::server::Server::new(config.port_range.clone(), Some(allowed_clients));
-
+            p2p_lib::server::Server::new(config.peer_port_range.clone(), Some(allowed_clients));
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
+        let router = Router::new(config.listen_port);
+
         info!("Created server:  {}", &pub_key_str);
-        Ok(Self { tunnel })
+        Ok(Self { tunnel, router })
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        self.tunnel.listen().await
+        let _ = tokio::try_join!(
+            tokio::spawn(self.router.start()),
+            tokio::spawn(self.tunnel.listen()),
+        )?;
+        Ok(())
         // need hook to know when peer has connected and when heartbeat is received
     }
 

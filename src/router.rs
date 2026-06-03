@@ -1,7 +1,7 @@
 use std::{io, sync::Arc};
 
 use axum::{
-    Router,
+    Router as AxumRouter,
     body::Body,
     extract::{Request, State},
     response::{IntoResponse, Response},
@@ -10,56 +10,64 @@ use axum::{
 use hyper::{StatusCode, Uri};
 use hyper_util::{client::legacy::connect::HttpConnector, rt::TokioExecutor};
 
-use crate::{config::RouterConfig, server::Peer};
+use crate::Peer;
 
 type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 
 #[derive(Clone)]
-struct RouterState {
+pub struct Router {
+    listen_port: u16,
     pub client: Client,
     pub peers: Arc<Vec<Peer>>,
 }
 
-pub async fn start(config: &RouterConfig, peers: Arc<Vec<Peer>>) -> anyhow::Result<(), io::Error> {
-    let client: Client =
-        hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
-            .build(HttpConnector::new());
-    let state = RouterState {
-        client,
-        peers: peers.clone(),
-    };
-    let app = Router::new()
-        .route(
-            "/",
-            get(handler)
-                .post(handler)
-                .put(handler)
-                .patch(handler)
-                .delete(handler)
-                .options(handler),
-        )
-        .route(
-            "/{*path}",
-            get(handler)
-                .post(handler)
-                .put(handler)
-                .patch(handler)
-                .delete(handler)
-                .options(handler),
-        )
-        .with_state(state);
-    let listen_addr = format!("{}:{}", config.listen_url, config.listen_port);
-    let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
+impl Router {
+    pub fn new(listen_port: u16) -> Self {
+        let client: Client =
+            hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
+                .build(HttpConnector::new());
+        Self {
+            listen_port,
+            client,
+            peers: Arc::new(Vec::new()),
+        }
+    }
 
-    tracing::info!("Router listening on {listen_addr}");
-    axum::serve(listener, app).await
+    pub async fn start(self) -> anyhow::Result<(), io::Error> {
+        let app = AxumRouter::new()
+            .route(
+                "/",
+                get(handler)
+                    .post(handler)
+                    .put(handler)
+                    .patch(handler)
+                    .delete(handler)
+                    .options(handler),
+            )
+            .route(
+                "/{*path}",
+                get(handler)
+                    .post(handler)
+                    .put(handler)
+                    .patch(handler)
+                    .delete(handler)
+                    .options(handler),
+            )
+            .with_state(self.clone());
+        let listen_addr = format!("localhost:{}", self.listen_port);
+        let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
+
+        tracing::info!("Router listening on {listen_addr}");
+        axum::serve(listener, app).await
+    }
+
+    pub fn select_peer(&self) -> Option<&Peer> {
+        self.peers.first()
+    }
 }
 
-async fn handler(
-    State(state): State<RouterState>,
-    mut req: Request,
-) -> Result<Response, StatusCode> {
-    if let Some(peer) = state.peers.first() {
+async fn handler(State(state): State<Router>, mut req: Request) -> Result<Response, StatusCode> {
+    if let Some(peer) = state.select_peer() {
         let path = req.uri().path();
         let path_query = req
             .uri()
