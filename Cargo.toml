@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.100"
 base64 = "0.22.1"
-bore-cli = { path = "../bore" }
+p2p-lib = { path = "../p2p-lib" }
 ed25519-dalek = { version = "2.2.0", features = ["pem", "rand_core"] }
 figment = { version = "0.10.19", features = ["toml", "env"] }
 rand = "0.8.6"

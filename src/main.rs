@@ -18,7 +18,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let shutdown = tokio::signal::ctrl_c();
-    let server = Server::create(&config.server).unwrap();
+    let server = Server::create(&config.server, &config.peers).unwrap();
 
     tokio::select! {
         result = server.start() => {
