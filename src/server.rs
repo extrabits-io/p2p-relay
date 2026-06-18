@@ -3,11 +3,14 @@ use std::{
     path::PathBuf,
 };
 
-use crate::config::ServerConfig;
+use crate::config::{PeerConfig, ServerConfig};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use ed25519_dalek::{
-    SigningKey,
-    pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, spki::der::pem::LineEnding},
+    SigningKey, VerifyingKey,
+    pkcs8::{
+        DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey,
+        spki::der::pem::LineEnding,
+    },
 };
 use rand::rngs::OsRng;
 use tracing::info;
@@ -19,16 +22,33 @@ pub struct Peer {
 }
 
 pub struct Server {
-    tunnel: bore_cli::server::Server,
+    tunnel: p2p_lib::server::Server,
 }
 
 impl Server {
-    pub fn create(config: &ServerConfig) -> anyhow::Result<Self> {
+    pub fn create(config: &ServerConfig, peers: &Vec<PeerConfig>) -> anyhow::Result<Self> {
         let signing_key = Self::get_signing_key(&config.private_key_path)?;
         let pub_key_der = signing_key.verifying_key().to_public_key_der()?;
         let pub_key_str = BASE64_STANDARD.encode(pub_key_der.as_bytes());
+        let allowed_clients = peers
+            .iter()
+            .filter_map(|peer| {
+                if let Ok(key_bytes) = BASE64_STANDARD.decode(&peer.public_key) {
+                    if let Ok(key) = VerifyingKey::from_public_key_der(&key_bytes) {
+                        Some(key)
+                    } else {
+                        tracing::warn!("Invalid peer key bytes");
+                        None
+                    }
+                } else {
+                    tracing::warn!("Invalid base-64 encoded peer key");
+                    None
+                }
+            })
+            .collect();
         let mut tunnel =
-            bore_cli::server::Server::new(config.port_range.clone(), Some(signing_key));
+            p2p_lib::server::Server::new(config.port_range.clone(), Some(allowed_clients));
+
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
