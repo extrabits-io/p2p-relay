@@ -44,8 +44,11 @@ impl Server {
                 }
             })
             .collect();
-        let mut tunnel =
-            p2p_lib::server::Server::new(config.peer_port_range.clone(), Some(allowed_clients));
+        let mut tunnel = p2p_lib::server::Server::new(
+            config.control_port,
+            config.peer_port_range.clone(),
+            allowed_clients,
+        );
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
 
