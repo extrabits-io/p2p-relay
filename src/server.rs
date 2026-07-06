@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{
+    Peer,
     config::{PeerConfig, ServerConfig},
     router::Router,
 };
@@ -54,6 +55,16 @@ impl Server {
 
         let router = Router::new(config.listen_port);
 
+        let router_cb = router.clone();
+        tunnel.set_on_peer_connected(move |(public_key, port)| {
+            router_cb.add_peer(Peer {
+                label: public_key.to_string(),
+                port,
+                last_heartbeat: None,
+                last_latency: None,
+            });
+        });
+
         info!("Created server:  {}", &pub_key_str);
         Ok(Self { tunnel, router })
     }
@@ -64,7 +75,6 @@ impl Server {
             tokio::spawn(self.tunnel.listen()),
         )?;
         Ok(())
-        // need hook to know when peer has connected and when heartbeat is received
     }
 
     fn get_signing_key(private_key_path: &PathBuf) -> anyhow::Result<SigningKey> {

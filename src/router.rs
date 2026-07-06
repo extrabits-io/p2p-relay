@@ -1,4 +1,5 @@
-use std::{io, sync::Arc};
+use std::io;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     Router as AxumRouter,
@@ -9,6 +10,7 @@ use axum::{
 };
 use hyper::{StatusCode, Uri};
 use hyper_util::{client::legacy::connect::HttpConnector, rt::TokioExecutor};
+use rand::random;
 
 use crate::Peer;
 
@@ -17,11 +19,15 @@ type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 #[derive(Clone)]
 pub struct Router {
     listen_port: u16,
-    pub client: Client,
-    pub peers: Arc<Vec<Peer>>,
+    client: Client,
+    peers: Arc<Mutex<Vec<Peer>>>,
 }
 
 impl Router {
+    pub fn add_peer(&self, peer: Peer) {
+        self.peers.lock().unwrap().push(peer);
+    }
+
     pub fn new(listen_port: u16) -> Self {
         let client: Client =
             hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
@@ -29,7 +35,7 @@ impl Router {
         Self {
             listen_port,
             client,
-            peers: Arc::new(Vec::new()),
+            peers: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -61,8 +67,12 @@ impl Router {
         axum::serve(listener, app).await
     }
 
-    pub fn select_peer(&self) -> Option<&Peer> {
-        self.peers.first()
+    pub fn select_peer(&self) -> Option<Peer> {
+        let ix: usize = random();
+        self.peers.lock().unwrap().get(ix).cloned().map(|peer| {
+            tracing::info!("Routing to {}: localhost:{}", &peer.label, peer.port);
+            peer
+        })
     }
 }
 
