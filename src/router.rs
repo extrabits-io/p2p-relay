@@ -68,8 +68,12 @@ impl Router {
     }
 
     pub fn select_peer(&self) -> Option<Peer> {
-        let ix: usize = random();
-        self.peers.lock().unwrap().get(ix).cloned().map(|peer| {
+        let peers = self.peers.lock().unwrap();
+        if peers.is_empty() {
+            return None;
+        }
+        let ix: usize = random::<usize>() % peers.len();
+        peers.get(ix).cloned().map(|peer| {
             tracing::info!("Routing to {}: localhost:{}", &peer.label, peer.port);
             peer
         })
