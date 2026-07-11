@@ -36,11 +36,11 @@ impl Server {
                     if let Ok(key) = PeerKey::from_bytes(key_bytes) {
                         Some(key)
                     } else {
-                        tracing::warn!("Invalid peer key bytes");
+                        tracing::warn!("invalid peer key bytes");
                         None
                     }
                 } else {
-                    tracing::warn!("Invalid base-64 encoded peer key");
+                    tracing::warn!("invalid base-64 encoded peer key");
                     None
                 }
             })
@@ -60,12 +60,11 @@ impl Server {
             router_cb.add_peer(Peer {
                 public_key,
                 port,
-                last_heartbeat: None,
                 last_latency: None,
             });
         });
 
-        info!("Created server:  {}", &pub_key_str);
+        info!("created server:  {}", &pub_key_str);
         Ok(Self {
             signing_key,
             tunnel,

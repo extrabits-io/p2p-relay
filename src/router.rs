@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use axum::{
     Router as AxumRouter,
@@ -10,7 +12,7 @@ use axum::{
 };
 use hyper::{StatusCode, Uri};
 use hyper_util::{client::legacy::connect::HttpConnector, rt::TokioExecutor};
-use rand::random;
+use p2p_lib::shared::{PeerInfo, PeerKey};
 
 use crate::Peer;
 
@@ -20,12 +22,12 @@ type Client = hyper_util::client::legacy::Client<HttpConnector, Body>;
 pub struct Router {
     listen_port: u16,
     client: Client,
-    peers: Arc<Mutex<Vec<Peer>>>,
+    peers: Arc<Mutex<HashMap<PeerKey, Peer>>>,
 }
 
 impl Router {
     pub fn add_peer(&self, peer: Peer) {
-        self.peers.lock().unwrap().push(peer);
+        self.peers.lock().unwrap().insert(peer.public_key, peer);
     }
 
     pub fn new(listen_port: u16) -> Self {
@@ -35,7 +37,7 @@ impl Router {
         Self {
             listen_port,
             client,
-            peers: Arc::new(Mutex::new(Vec::new())),
+            peers: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -63,42 +65,63 @@ impl Router {
         let listen_addr = format!("localhost:{}", self.listen_port);
         let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
 
-        tracing::info!("Router listening on {listen_addr}");
+        tracing::info!("router listening on {listen_addr}");
         axum::serve(listener, app).await
     }
 
-    pub fn select_peer(&self) -> Option<Peer> {
+    pub fn select_peer(&self) -> Option<PeerInfo> {
         let peers = self.peers.lock().unwrap();
-        if peers.is_empty() {
-            return None;
+        let mut best = Duration::MAX;
+        let mut candidate = None;
+        for peer in peers.values() {
+            if let Some(latency) = peer.last_latency {
+                if latency < best {
+                    best = latency;
+                    candidate = Some(peer);
+                }
+            } else {
+                best = Duration::ZERO;
+                candidate = Some(peer);
+            }
         }
-        let ix: usize = random::<usize>() % peers.len();
-        peers.get(ix).cloned().map(|peer| {
-            tracing::info!("Routing to {}: localhost:{}", &peer.public_key, peer.port);
-            peer
+        candidate.map(|peer| {
+            tracing::info!("routing to {}: localhost:{}", &peer.public_key, peer.port);
+            (peer.public_key, peer.port)
         })
+    }
+
+    pub fn update_latency(&self, key: PeerKey, latency: Duration) {
+        if let Some(peer) = self.peers.lock().unwrap().get_mut(&key) {
+            peer.last_latency = Some(latency);
+        }
     }
 }
 
 async fn handler(State(state): State<Router>, mut req: Request) -> Result<Response, StatusCode> {
-    if let Some(peer) = state.select_peer() {
+    if let Some((key, port)) = state.select_peer() {
         let path = req.uri().path();
         let path_query = req
             .uri()
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or(path);
-        let uri = format!("http://localhost:{}{path_query}", peer.port);
+        let uri = format!("http://localhost:{port}{path_query}");
 
-        tracing::info!("Forwarding request to {}", &uri);
+        tracing::info!("forwarding request to {}", &uri);
         *req.uri_mut() = Uri::try_from(uri).unwrap();
 
-        return Ok(state
+        let start = Instant::now();
+        let resp = state
             .client
             .request(req)
             .await
             .map_err(|_| StatusCode::BAD_REQUEST)?
-            .into_response());
+            .into_response();
+        let latency = Instant::now().duration_since(start);
+        tracing::info!("request completed in {:?}", latency);
+        state.update_latency(key, latency);
+
+        return Ok(resp);
     }
     Ok(StatusCode::NO_CONTENT.into_response())
 }
