@@ -64,7 +64,7 @@ impl Server {
             });
         });
 
-        info!("created server:  {}", &pub_key_str);
+        info!("relay running:  {}", &pub_key_str);
         Ok(Self {
             signing_key,
             tunnel,

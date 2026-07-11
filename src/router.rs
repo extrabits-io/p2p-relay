@@ -117,8 +117,15 @@ async fn handler(State(state): State<Router>, mut req: Request) -> Result<Respon
             .await
             .map_err(|_| StatusCode::BAD_REQUEST)?
             .into_response();
-        let latency = Instant::now().duration_since(start);
-        tracing::info!("request completed in {:?}", latency);
+
+        let latency = if resp.status().is_server_error() {
+            tracing::error!("peer {key} returned error: {}", resp.status());
+            Duration::MAX
+        } else {
+            let dur = Instant::now().duration_since(start);
+            tracing::info!("request completed in {:?}", dur);
+            dur
+        };
         state.update_latency(key, latency);
 
         return Ok(resp);
