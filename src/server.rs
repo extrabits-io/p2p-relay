@@ -10,16 +10,16 @@ use crate::{
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use ed25519_dalek::{
-    SigningKey, VerifyingKey,
-    pkcs8::{
-        DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey,
-        spki::der::pem::LineEnding,
-    },
+    SigningKey,
+    pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, spki::der::pem::LineEnding},
 };
+use p2p_lib::shared::PeerKey;
 use rand::rngs::OsRng;
 use tracing::info;
 
 pub struct Server {
+    #[allow(unused)]
+    signing_key: SigningKey,
     tunnel: p2p_lib::server::Server,
     router: Router,
 }
@@ -33,7 +33,7 @@ impl Server {
             .iter()
             .filter_map(|peer| {
                 if let Ok(key_bytes) = BASE64_STANDARD.decode(&peer.public_key) {
-                    if let Ok(key) = VerifyingKey::from_public_key_der(&key_bytes) {
+                    if let Ok(key) = PeerKey::from_bytes(key_bytes) {
                         Some(key)
                     } else {
                         tracing::warn!("Invalid peer key bytes");
@@ -58,7 +58,7 @@ impl Server {
         let router_cb = router.clone();
         tunnel.set_on_peer_connected(move |(public_key, port)| {
             router_cb.add_peer(Peer {
-                label: public_key.to_string(),
+                public_key,
                 port,
                 last_heartbeat: None,
                 last_latency: None,
@@ -66,7 +66,11 @@ impl Server {
         });
 
         info!("Created server:  {}", &pub_key_str);
-        Ok(Self { tunnel, router })
+        Ok(Self {
+            signing_key,
+            tunnel,
+            router,
+        })
     }
 
     pub async fn start(self) -> anyhow::Result<()> {

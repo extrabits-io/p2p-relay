@@ -74,7 +74,7 @@ impl Router {
         }
         let ix: usize = random::<usize>() % peers.len();
         peers.get(ix).cloned().map(|peer| {
-            tracing::info!("Routing to {}: localhost:{}", &peer.label, peer.port);
+            tracing::info!("Routing to {}: localhost:{}", &peer.public_key, peer.port);
             peer
         })
     }
