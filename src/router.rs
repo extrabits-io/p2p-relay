@@ -131,5 +131,6 @@ async fn handler(State(state): State<Router>, mut req: Request) -> Result<Respon
 
         return Ok(resp);
     }
+    tracing::warn!("no peers available");
     Ok(StatusCode::NO_CONTENT.into_response())
 }
