@@ -41,6 +41,10 @@ impl Router {
         }
     }
 
+    pub fn remove_peer(&self, public_key: PeerKey) {
+        self.peers.lock().unwrap().remove(&public_key);
+    }
+
     pub async fn start(self) -> anyhow::Result<(), io::Error> {
         let app = AxumRouter::new()
             .route(
@@ -84,10 +88,7 @@ impl Router {
                 candidate = Some(peer);
             }
         }
-        candidate.map(|peer| {
-            tracing::info!("routing to {}: localhost:{}", &peer.public_key, peer.port);
-            (peer.public_key, peer.port)
-        })
+        candidate.map(|peer| (peer.public_key, peer.port))
     }
 
     pub fn update_latency(&self, key: PeerKey, latency: Duration) {

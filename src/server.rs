@@ -55,13 +55,18 @@ impl Server {
 
         let router = Router::new(config.listen_port);
 
-        let router_cb = router.clone();
+        let router_conn = router.clone();
         tunnel.set_on_peer_connected(move |(public_key, port)| {
-            router_cb.add_peer(Peer {
+            router_conn.add_peer(Peer {
                 public_key,
                 port,
                 last_latency: None,
             });
+        });
+
+        let router_dis = router.clone();
+        tunnel.set_on_peer_disconnected(move |public_key| {
+            router_dis.remove_peer(public_key);
         });
 
         info!("relay running:  {}", &pub_key_str);
