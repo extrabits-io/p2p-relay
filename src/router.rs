@@ -31,9 +31,8 @@ impl Router {
     }
 
     pub fn new(listen_port: u16) -> Self {
-        let client: Client =
-            hyper_util::client::legacy::Client::<(), ()>::builder(TokioExecutor::new())
-                .build(HttpConnector::new());
+        let client: Client = hyper_util::client::legacy::Client::builder(TokioExecutor::new())
+            .build(HttpConnector::new());
         Self {
             listen_port,
             client,
@@ -66,7 +65,7 @@ impl Router {
                     .options(handler),
             )
             .with_state(self.clone());
-        let listen_addr = format!("localhost:{}", self.listen_port);
+        let listen_addr = format!("0.0.0.0:{}", self.listen_port);
         let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
 
         tracing::info!("router listening on {listen_addr}");
@@ -106,17 +105,23 @@ async fn handler(State(state): State<Router>, mut req: Request) -> Result<Respon
             .path_and_query()
             .map(|p| p.as_str())
             .unwrap_or(path);
-        let uri = format!("http://localhost:{port}{path_query}");
+        let uri = format!("http://0.0.0.0:{port}{path_query}");
 
         tracing::info!("forwarding request to {}", &uri);
-        *req.uri_mut() = Uri::try_from(uri).unwrap();
+        *req.uri_mut() = Uri::try_from(uri).map_err(|e| {
+            tracing::warn!("unable to construct URI: {e}");
+            StatusCode::BAD_REQUEST
+        })?;
 
         let start = Instant::now();
         let resp = state
             .client
             .request(req)
             .await
-            .map_err(|_| StatusCode::BAD_REQUEST)?
+            .map_err(|e| {
+                tracing::warn!("request failed:  {e}");
+                StatusCode::BAD_REQUEST
+            })?
             .into_response();
 
         let latency = if resp.status().is_server_error() {

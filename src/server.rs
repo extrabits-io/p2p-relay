@@ -51,7 +51,7 @@ impl Server {
             allowed_clients,
         );
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
-        tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
 
         let router = Router::new(config.listen_port);
 
@@ -78,11 +78,11 @@ impl Server {
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        let _ = tokio::try_join!(
+        let (router_res, tunnel_res) = tokio::try_join!(
             tokio::spawn(self.router.start()),
             tokio::spawn(self.tunnel.listen()),
         )?;
-        Ok(())
+        router_res.or(tunnel_res)
     }
 
     fn get_signing_key(private_key_path: &PathBuf) -> anyhow::Result<SigningKey> {
