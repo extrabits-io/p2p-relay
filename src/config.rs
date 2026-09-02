@@ -7,8 +7,13 @@ use std::str::FromStr;
 pub struct ServerConfig {
     #[serde(default = "default_private_key_path")]
     pub private_key_path: PathBuf,
+    /// external port to listen for incoming web requests
+    pub listen_port: u16,
+    /// port to listen for peer connections
+    pub control_port: u16,
+    /// allowed range of ports available to peers
     #[serde(deserialize_with = "deserialize_range")]
-    pub port_range: RangeInclusive<u16>,
+    pub peer_port_range: RangeInclusive<u16>,
 }
 
 #[derive(Debug, Deserialize)]

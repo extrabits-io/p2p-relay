@@ -3,26 +3,25 @@ use std::{
     path::PathBuf,
 };
 
-use crate::config::{PeerConfig, ServerConfig};
+use crate::{
+    Peer,
+    config::{PeerConfig, ServerConfig},
+    router::Router,
+};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use ed25519_dalek::{
-    SigningKey, VerifyingKey,
-    pkcs8::{
-        DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey,
-        spki::der::pem::LineEnding,
-    },
+    SigningKey,
+    pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, spki::der::pem::LineEnding},
 };
+use p2p_lib::shared::PeerKey;
 use rand::rngs::OsRng;
 use tracing::info;
 
-#[derive(Clone, Debug)]
-pub struct Peer {
-    pub label: String,
-    pub port: u16,
-}
-
 pub struct Server {
+    #[allow(unused)]
+    signing_key: SigningKey,
     tunnel: p2p_lib::server::Server,
+    router: Router,
 }
 
 impl Server {
@@ -34,30 +33,56 @@ impl Server {
             .iter()
             .filter_map(|peer| {
                 if let Ok(key_bytes) = BASE64_STANDARD.decode(&peer.public_key) {
-                    if let Ok(key) = VerifyingKey::from_public_key_der(&key_bytes) {
+                    if let Ok(key) = PeerKey::from_bytes(key_bytes) {
                         Some(key)
                     } else {
-                        tracing::warn!("Invalid peer key bytes");
+                        tracing::warn!("invalid peer key bytes");
                         None
                     }
                 } else {
-                    tracing::warn!("Invalid base-64 encoded peer key");
+                    tracing::warn!("invalid base-64 encoded peer key");
                     None
                 }
             })
             .collect();
-        let mut tunnel =
-            p2p_lib::server::Server::new(config.port_range.clone(), Some(allowed_clients));
-
+        let mut tunnel = p2p_lib::server::Server::new(
+            config.control_port,
+            config.peer_port_range.clone(),
+            allowed_clients,
+        );
         tunnel.set_bind_addr(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
-        tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        tunnel.set_bind_tunnels(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
 
-        info!("Created server:  {}", &pub_key_str);
-        Ok(Self { tunnel })
+        let router = Router::new(config.listen_port);
+
+        let router_conn = router.clone();
+        tunnel.set_on_peer_connected(move |(public_key, port)| {
+            router_conn.add_peer(Peer {
+                public_key,
+                port,
+                last_latency: None,
+            });
+        });
+
+        let router_dis = router.clone();
+        tunnel.set_on_peer_disconnected(move |public_key| {
+            router_dis.remove_peer(public_key);
+        });
+
+        info!("relay running:  {}", &pub_key_str);
+        Ok(Self {
+            signing_key,
+            tunnel,
+            router,
+        })
     }
 
     pub async fn start(self) -> anyhow::Result<()> {
-        self.tunnel.listen().await
+        let (router_res, tunnel_res) = tokio::try_join!(
+            tokio::spawn(self.router.start()),
+            tokio::spawn(self.tunnel.listen()),
+        )?;
+        router_res.or(tunnel_res)
     }
 
     fn get_signing_key(private_key_path: &PathBuf) -> anyhow::Result<SigningKey> {

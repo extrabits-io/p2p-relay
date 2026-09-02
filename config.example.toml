@@ -1,6 +1,8 @@
 [server]
 private_key_path = "/path/to/private.key"
-port_range = "3000..4000"
+control_port = 3000
+listen_port = 3001
+peer_port_range = "3002..4000"
 
 [[peers]]
 label = "peer-1"

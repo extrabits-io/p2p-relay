@@ -5,10 +5,13 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
+axum = "0.8.9"
 base64 = { workspace = true }
 p2p-lib = { workspace = true }
 ed25519-dalek = { workspace = true }
 figment = { version = "0.10.19", features = ["toml", "env"] }
+hyper = { version = "1.9.0", features = ["full"] }
+hyper-util = { version = "0.1.20", features = ["client-legacy"] }
 rand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

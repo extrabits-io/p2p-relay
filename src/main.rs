@@ -24,17 +24,17 @@ async fn main() {
         result = server.start() => {
             match result {
                 Ok(()) => {
-                    error!("Server stopped unexpectedly");
+                    error!("server stopped unexpectedly");
                     std::process::exit(1);
                 }
                 Err(err) => {
-                    error!("Server failure: {err}");
+                    error!("server failure: {err}");
                     std::process::exit(1);
                 }
             }
         }
         _ = shutdown => {
-            info!("Shutting down...");
+            info!("shutting down...");
         }
     }
 }
